@@ -17,10 +17,20 @@ limitations under the License.
 package activejdbc.examples.simple;
 
 import activejdbc.examples.kotlin.Employee;
+import org.apache.commons.io.IOUtils;
 import org.javalite.activejdbc.Base;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
 
 import static org.javalite.test.jspec.JSpec.the;
 
@@ -29,9 +39,42 @@ import static org.javalite.test.jspec.JSpec.the;
  */
 public class EmployeeSpec {
 
+    @BeforeClass
+    public static void createSchema() throws IOException, SQLException {
+        openConnection();
+
+        try (InputStream rsrcStream = EmployeeSpec.class.getResourceAsStream("/createSchema.sql")) {
+            List<String> lines = IOUtils.readLines(rsrcStream, StandardCharsets.UTF_8);
+            List<String> stmtLines = new ArrayList<>();
+
+            for (String next : lines) {
+                String trimmedLine = next.trim();
+
+                if (trimmedLine.equals("")) {
+                    continue;
+                }
+                if (!trimmedLine.endsWith(";")){
+                    stmtLines.add(trimmedLine);
+                }
+                else {
+                    stmtLines.add(trimmedLine.substring(0, trimmedLine.length() - 1));
+
+                    String statement = String.join("\n", stmtLines);
+                    PreparedStatement sql = Base.connection().prepareStatement(statement);
+                    stmtLines.clear();
+                    sql.execute();
+                    sql.close();
+                }
+            }
+        }
+        finally {
+            Base.close();
+        }
+    }
+
     @Before
-    public void before(){
-        Base.open("org.h2.Driver", "jdbc:h2:./build/activejdbc-sample", "sa", "");
+    public void before() throws IOException {
+        openConnection();
         Base.openTransaction();
     }
 
@@ -56,5 +99,16 @@ public class EmployeeSpec {
         
         //all is good:
         the(employee).shouldBe("valid");
+    }
+
+    private static void openConnection() throws IOException {
+        Properties jdbcProps = new Properties();
+
+        try (InputStream is = EmployeeSpec.class.getResourceAsStream("/jdbc.properties"))
+        {
+            jdbcProps.load(is);
+        }
+        Base.open(jdbcProps.getProperty("DRIVER"), jdbcProps.getProperty("URL"), jdbcProps.getProperty("USER"),
+                jdbcProps.getProperty("PASSWORD"));
     }
 }
